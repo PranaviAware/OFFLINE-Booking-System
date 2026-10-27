@@ -25,8 +25,16 @@ export const api = {
     const res = await apiClient.post('/auth/login', { email, password });
     return res.data;
   },
-  demoLogin: async (persona: 'admin' | 'user1' | 'user2') => {
-    const res = await apiClient.post('/auth/demo-login', { persona });
+  register: async (fullName: string, email: string, password?: string) => {
+    const res = await apiClient.post('/auth/register', { fullName, email, password });
+    return res.data;
+  },
+  getUsers: async () => {
+    const res = await apiClient.get<{ count: number; data: Array<{ id: string; email: string; name: string; role: 'ADMIN' | 'USER'; created_at: string }> }>('/auth/users');
+    return res.data.data;
+  },
+  createUser: async (data: { fullName: string; email: string; password?: string; role: 'ADMIN' | 'USER' }) => {
+    const res = await apiClient.post('/auth/users', data);
     return res.data;
   },
   getMe: async () => {

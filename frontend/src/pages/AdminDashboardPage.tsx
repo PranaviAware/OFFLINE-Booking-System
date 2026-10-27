@@ -8,22 +8,38 @@ interface AdminDashboardPageProps {
   onNotify: (msg: string, type: 'success' | 'error') => void;
 }
 
+interface UserRecord {
+  id: string;
+  name: string;
+  email: string;
+  role: 'ADMIN' | 'USER';
+  created_at: string;
+}
+
 export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNotify }) => {
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
 
-  const [activeTab, setActiveTab] = useState<'bookings' | 'resources'>('bookings');
+  const [activeTab, setActiveTab] = useState<'bookings' | 'resources' | 'users'>('bookings');
   const [allBookings, setAllBookings] = useState<Booking[]>([]);
   const [resources, setResources] = useState<Resource[]>([]);
+  const [usersList, setUsersList] = useState<UserRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
   // Add Resource state
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [name, setName] = useState('');
-  const [type, setType] = useState<ResourceType>('MEETING_ROOM');
-  const [capacity, setCapacity] = useState(4);
-  const [location, setLocation] = useState('');
-  const [description, setDescription] = useState('');
+  const [showAddResource, setShowAddResource] = useState(false);
+  const [resName, setResName] = useState('');
+  const [resType, setResType] = useState<ResourceType>('MEETING_ROOM');
+  const [resCapacity, setResCapacity] = useState(4);
+  const [resLocation, setResLocation] = useState('');
+  const [resDescription, setResDescription] = useState('');
+
+  // Add User state
+  const [showAddUser, setShowAddUser] = useState(false);
+  const [userName, setUserName] = useState('');
+  const [userEmail, setUserEmail] = useState('');
+  const [userPassword, setUserPassword] = useState('User@123');
+  const [userRole, setUserRole] = useState<'ADMIN' | 'USER'>('USER');
 
   const loadData = async () => {
     if (!isAdmin) return;
@@ -33,6 +49,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNotify
       setAllBookings(bData);
       const rData = await api.getResources({ all: true });
       setResources(rData);
+      const uData = await api.getUsers();
+      setUsersList(uData);
     } catch {
       onNotify('Failed to load admin data', 'error');
     } finally {
@@ -42,7 +60,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNotify
 
   useEffect(() => {
     loadData();
-  }, [isAdmin]);
+  }, [isAdmin, activeTab]);
 
   const handleAdminCancel = async (id: string) => {
     if (!window.confirm('Admin Override: Cancel this booking?')) return;
@@ -59,20 +77,41 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNotify
     e.preventDefault();
     try {
       await api.createResource({
-        name,
-        type,
-        capacity: Number(capacity),
-        location,
-        description: description || undefined
+        name: resName,
+        type: resType,
+        capacity: Number(resCapacity),
+        location: resLocation,
+        description: resDescription || undefined
       });
-      onNotify(`Added resource: ${name}`, 'success');
-      setShowAddForm(false);
-      setName('');
-      setLocation('');
-      setDescription('');
+      onNotify(`Added resource: ${resName}`, 'success');
+      setShowAddResource(false);
+      setResName('');
+      setResLocation('');
+      setResDescription('');
       loadData();
     } catch (err: any) {
       onNotify(err.response?.data?.message || 'Failed to add resource', 'error');
+    }
+  };
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.createUser({
+        fullName: userName,
+        email: userEmail,
+        password: userPassword,
+        role: userRole
+      });
+      onNotify(`User created successfully with role ${userRole}`, 'success');
+      setShowAddUser(false);
+      setUserName('');
+      setUserEmail('');
+      setUserPassword('User@123');
+      setUserRole('USER');
+      loadData();
+    } catch (err: any) {
+      onNotify(err.response?.data?.message || 'Failed to create user', 'error');
     }
   };
 
@@ -91,19 +130,19 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNotify
     <div className="space-y-4">
       
       {/* Title & Tabs */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-kpit-purple">Admin Management Console</h1>
-          <p className="text-xs text-slate-500">Manage all employee reservations and workspace resources.</p>
+          <p className="text-xs text-slate-500">Manage bookings, workspace resources, and employee access.</p>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-1.5 bg-slate-100 p-1 rounded-lg">
           <button
             onClick={() => setActiveTab('bookings')}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold ${
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
               activeTab === 'bookings'
-                ? 'bg-kpit-purple text-white'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                ? 'bg-kpit-purple text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             All Bookings ({allBookings.length})
@@ -111,13 +150,24 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNotify
 
           <button
             onClick={() => setActiveTab('resources')}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold ${
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
               activeTab === 'resources'
-                ? 'bg-kpit-purple text-white'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                ? 'bg-kpit-purple text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Manage Resources ({resources.length})
+            Resources ({resources.length})
+          </button>
+
+          <button
+            onClick={() => setActiveTab('users')}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+              activeTab === 'users'
+                ? 'bg-kpit-purple text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Users & Roles ({usersList.length})
           </button>
         </div>
       </div>
@@ -179,14 +229,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNotify
         <div className="space-y-3">
           <div className="flex justify-end">
             <button
-              onClick={() => setShowAddForm(!showAddForm)}
+              onClick={() => setShowAddResource(!showAddResource)}
               className="px-3 py-1.5 bg-kpit-green hover:bg-kpit-greenHover text-white text-xs font-semibold rounded-md shadow-sm"
             >
-              {showAddForm ? 'Close Form' : '+ Add New Resource'}
+              {showAddResource ? 'Close Form' : '+ Add New Resource'}
             </button>
           </div>
 
-          {showAddForm && (
+          {showAddResource && (
             <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm">
               <h3 className="font-bold text-slate-900 text-sm mb-3">New Resource</h3>
               <form onSubmit={handleCreateResource} className="grid grid-cols-2 gap-3 text-xs">
@@ -195,8 +245,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNotify
                   <input
                     type="text"
                     required
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    value={resName}
+                    onChange={(e) => setResName(e.target.value)}
                     placeholder="e.g. Focus Room C"
                     className="w-full px-2.5 py-1.5 border rounded-md"
                   />
@@ -205,8 +255,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNotify
                 <div>
                   <label className="block font-semibold mb-1">Type</label>
                   <select
-                    value={type}
-                    onChange={(e) => setType(e.target.value as ResourceType)}
+                    value={resType}
+                    onChange={(e) => setResType(e.target.value as ResourceType)}
                     className="w-full px-2.5 py-1.5 border rounded-md bg-white"
                   >
                     <option value="MEETING_ROOM">Meeting Room</option>
@@ -221,8 +271,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNotify
                     type="number"
                     min={1}
                     required
-                    value={capacity}
-                    onChange={(e) => setCapacity(Number(e.target.value))}
+                    value={resCapacity}
+                    onChange={(e) => setResCapacity(Number(e.target.value))}
                     className="w-full px-2.5 py-1.5 border rounded-md"
                   />
                 </div>
@@ -232,8 +282,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNotify
                   <input
                     type="text"
                     required
-                    value={location}
-                    onChange={(e) => setLocation(e.target.value)}
+                    value={resLocation}
+                    onChange={(e) => setResLocation(e.target.value)}
                     placeholder="e.g. Floor 2, East"
                     className="w-full px-2.5 py-1.5 border rounded-md"
                   />
@@ -243,8 +293,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNotify
                   <label className="block font-semibold mb-1">Description</label>
                   <input
                     type="text"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
+                    value={resDescription}
+                    onChange={(e) => setResDescription(e.target.value)}
                     placeholder="e.g. Dual monitors, whiteboard"
                     className="w-full px-2.5 py-1.5 border rounded-md"
                   />
@@ -253,7 +303,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNotify
                 <div className="col-span-2 flex justify-end gap-2 pt-2">
                   <button
                     type="button"
-                    onClick={() => setShowAddForm(false)}
+                    onClick={() => setShowAddResource(false)}
                     className="px-3 py-1 border rounded-md text-slate-600"
                   >
                     Cancel
@@ -282,6 +332,126 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({ onNotify
                 {r.description && <p className="text-slate-600 mt-1 line-clamp-1">{r.description}</p>}
               </div>
             ))}
+          </div>
+
+        </div>
+      )}
+
+      {/* Tab 3: User Management (Create & View Users with Roles) */}
+      {activeTab === 'users' && (
+        <div className="space-y-3">
+          <div className="flex justify-between items-center">
+            <p className="text-xs text-slate-500">
+              Only administrators can create new users and assign role privileges.
+            </p>
+            <button
+              onClick={() => setShowAddUser(!showAddUser)}
+              className="px-3 py-1.5 bg-kpit-green hover:bg-kpit-greenHover text-white text-xs font-semibold rounded-md shadow-sm"
+            >
+              {showAddUser ? 'Close Form' : '+ Add New Employee'}
+            </button>
+          </div>
+
+          {showAddUser && (
+            <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm">
+              <h3 className="font-bold text-slate-900 text-sm mb-3">Create User Account</h3>
+              <form onSubmit={handleCreateUser} className="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label className="block font-semibold mb-1">Full Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={userName}
+                    onChange={(e) => setUserName(e.target.value)}
+                    placeholder="e.g. David Miller"
+                    className="w-full px-2.5 py-1.5 border rounded-md"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold mb-1">Work Email</label>
+                  <input
+                    type="email"
+                    required
+                    value={userEmail}
+                    onChange={(e) => setUserEmail(e.target.value)}
+                    placeholder="e.g. david@kpit.com"
+                    className="w-full px-2.5 py-1.5 border rounded-md"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold mb-1">Initial Password</label>
+                  <input
+                    type="password"
+                    required
+                    value={userPassword}
+                    onChange={(e) => setUserPassword(e.target.value)}
+                    className="w-full px-2.5 py-1.5 border rounded-md font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold mb-1">Assigned Role</label>
+                  <select
+                    value={userRole}
+                    onChange={(e) => setUserRole(e.target.value as 'ADMIN' | 'USER')}
+                    className="w-full px-2.5 py-1.5 border rounded-md bg-white font-semibold"
+                  >
+                    <option value="USER">USER (Limited Access - Booking Only)</option>
+                    <option value="ADMIN">ADMIN (Full Access - Management & Overrides)</option>
+                  </select>
+                </div>
+
+                <div className="col-span-2 flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddUser(false)}
+                    className="px-3 py-1 border rounded-md text-slate-600"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-1 bg-kpit-green text-white font-semibold rounded-md"
+                  >
+                    Create User
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Users Table */}
+          <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase text-[11px]">
+                <tr>
+                  <th className="py-2.5 px-3">Employee Name</th>
+                  <th className="py-2.5 px-3">Email Address</th>
+                  <th className="py-2.5 px-3">Role Privilege</th>
+                  <th className="py-2.5 px-3">User ID</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {usersList.map((u) => (
+                  <tr key={u.id} className="hover:bg-slate-50">
+                    <td className="py-2.5 px-3 font-semibold text-slate-900">{u.name}</td>
+                    <td className="py-2.5 px-3 text-slate-600">{u.email}</td>
+                    <td className="py-2.5 px-3">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                        u.role === 'ADMIN'
+                          ? 'bg-purple-100 text-kpit-purple'
+                          : 'bg-emerald-100 text-emerald-800'
+                      }`}>
+                        {u.role === 'ADMIN' ? '👑 ADMIN (Full Access)' : '👤 USER (Limited)'}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-3 font-mono text-[11px] text-slate-400">{u.id}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
 
         </div>

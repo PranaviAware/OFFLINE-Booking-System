@@ -1,53 +1,57 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
+import { z } from 'zod';
 import { config } from '../config/config';
 import { authenticateJWT } from '../middleware/auth';
+import { requireAdmin } from '../middleware/rbac';
 import { db } from '../config/database';
 import { randomUUID } from 'crypto';
 
 export const authRouter = Router();
 
 /**
- * Pre-configured corporate demo users matching OIDC tenant directory:
- * Alice   -> Admin
- * Bob     -> User
- * Charlie -> User
+ * Standard OIDC Discovery Document
+ * Matches Keycloak / Auth0 well-known configuration
  */
-export const DEMO_USERS = {
-  admin: {
-    id: 'usr_alice_admin',
-    email: 'alice.admin@officelink.com',
-    name: 'Alice Admin',
-    role: 'ADMIN' as const,
-    rolesClaim: ['Admin', 'User']
-  },
-  user1: {
-    id: 'usr_bob_user',
-    email: 'bob.user@officelink.com',
-    name: 'Bob Employee',
-    role: 'USER' as const,
-    rolesClaim: ['User']
-  },
-  user2: {
-    id: 'usr_charlie_user',
-    email: 'charlie.user@officelink.com',
-    name: 'Charlie Employee',
-    role: 'USER' as const,
-    rolesClaim: ['User']
-  }
-};
+authRouter.get('/.well-known/openid-configuration', (req, res) => {
+  res.json({
+    issuer: config.jwtIssuer,
+    authorization_endpoint: `${config.clientOrigin}/login`,
+    token_endpoint: `http://localhost:${config.port}/api/v1/auth/login`,
+    userinfo_endpoint: `http://localhost:${config.port}/api/v1/auth/me`,
+    jwks_uri: `http://localhost:${config.port}/api/v1/auth/jwks.json`,
+    response_types_supported: ['token', 'id_token'],
+    subject_types_supported: ['public'],
+    id_token_signing_alg_values_supported: ['HS256', 'RS256']
+  });
+});
 
 /**
- * Generates an authentic cryptographically signed JWT matching OIDC Auth0 / Keycloak claims
+ * Generates an OIDC-compliant JWT containing Keycloak & Auth0 role claims
  */
-export function generateTokenForUser(user: { id: string; email: string; name: string; role: 'ADMIN' | 'USER'; rolesClaim?: string[] }) {
-  const roles = user.rolesClaim || (user.role === 'ADMIN' ? ['Admin', 'User'] : ['User']);
-  
+export function generateOidcToken(user: { id: string; email: string; full_name: string; role: 'ADMIN' | 'USER' }) {
+  const roleName = user.role === 'ADMIN' ? 'Admin' : 'User';
+  const roles = user.role === 'ADMIN' ? ['Admin', 'User'] : ['User'];
+
   const payload = {
+    // Standard OIDC Claims
     sub: user.id,
     email: user.email,
-    name: user.name,
+    email_verified: true,
+    name: user.full_name,
+    preferred_username: user.email,
+    
+    // Auth0 Namespaced Claims
     'https://officelink.app/roles': roles,
+    'https://officelink.app/email': user.email,
+    
+    // Keycloak Realm Access Claims
+    realm_access: {
+      roles: roles
+    },
+    
+    // Standard Claims
     roles: roles,
     role: user.role
   };
@@ -62,102 +66,176 @@ export function generateTokenForUser(user: { id: string; email: string; name: st
 
 /**
  * POST /api/v1/auth/login
- * Standard corporate login with email & password credentials
+ * Real credentials authentication using bcrypt
  */
-authRouter.post('/login', (req, res) => {
-  const { email, password } = req.body;
+authRouter.post('/login', (req, res, next) => {
+  try {
+    const { email, password } = req.body;
 
-  if (!email || typeof email !== 'string') {
-    return res.status(400).json({ error: 'ValidationError', message: 'Work email is required' });
-  }
-
-  const normalizedEmail = email.trim().toLowerCase();
-
-  // Find if user matches any demo persona
-  const demoUser = Object.values(DEMO_USERS).find(u => u.email.toLowerCase() === normalizedEmail);
-
-  let userRecord: { id: string; email: string; full_name: string; role: 'ADMIN' | 'USER' };
-
-  if (demoUser) {
-    userRecord = {
-      id: demoUser.id,
-      email: demoUser.email,
-      full_name: demoUser.name,
-      role: demoUser.role
-    };
-  } else {
-    // Check if user exists in DB
-    const existing = db.prepare('SELECT id, email, full_name, role FROM users WHERE email = ?').get(normalizedEmail) as any;
-    if (existing) {
-      userRecord = existing;
-    } else {
-      // Auto-register new employee
-      const newId = `usr_${randomUUID().replace(/-/g, '').slice(0, 10)}`;
-      const derivedName = normalizedEmail.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-      const role = normalizedEmail.includes('admin') ? 'ADMIN' : 'USER';
-      
-      db.prepare(`
-        INSERT INTO users (id, email, full_name, role)
-        VALUES (?, ?, ?, ?)
-      `).run(newId, normalizedEmail, derivedName, role);
-
-      userRecord = { id: newId, email: normalizedEmail, full_name: derivedName, role };
+    if (!email || !password) {
+      return res.status(400).json({
+        error: 'ValidationError',
+        message: 'Email and password are required'
+      });
     }
-  }
 
-  // Ensure record is in DB
-  db.prepare(`
-    INSERT INTO users (id, email, full_name, role)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET full_name = excluded.full_name, role = excluded.role
-  `).run(userRecord.id, userRecord.email, userRecord.full_name, userRecord.role);
+    const normalizedEmail = email.trim().toLowerCase();
 
-  const token = generateTokenForUser({
-    id: userRecord.id,
-    email: userRecord.email,
-    name: userRecord.full_name,
-    role: userRecord.role
-  });
+    // Fetch user from DB
+    const user = db.prepare('SELECT id, email, password_hash, full_name, role FROM users WHERE email = ?')
+      .get(normalizedEmail) as any;
 
-  return res.json({
-    message: `Authentication successful. Logged in as ${userRecord.full_name}`,
-    token,
-    user: {
-      id: userRecord.id,
-      email: userRecord.email,
-      name: userRecord.full_name,
-      role: userRecord.role
+    if (!user) {
+      return res.status(401).json({
+        error: 'Unauthorized',
+        message: 'Invalid email or password'
+      });
     }
-  });
+
+    // Verify hashed password
+    const passwordValid = user.password_hash && bcrypt.compareSync(password, user.password_hash);
+    if (!passwordValid) {
+      return res.status(401).json({
+        error: 'Unauthorized',
+        message: 'Invalid email or password'
+      });
+    }
+
+    // Issue OIDC JWT token
+    const token = generateOidcToken(user);
+
+    res.json({
+      message: `Authentication successful. Welcome, ${user.full_name}`,
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.full_name,
+        role: user.role
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 /**
- * POST /api/v1/auth/demo-login
- * Fast Single Sign-On simulation: Admin (Alice), User (Bob), User (Charlie)
+ * POST /api/v1/auth/register
+ * Public self-registration for employees.
+ * SECURITY GUARD: Automatically enforces role: 'USER'.
+ * Public users cannot register as Admin!
  */
-authRouter.post('/demo-login', (req, res) => {
-  const { persona } = req.body;
-  const user = DEMO_USERS[persona as keyof typeof DEMO_USERS] || DEMO_USERS.user1;
+authRouter.post('/register', (req, res, next) => {
+  try {
+    const registerSchema = z.object({
+      email: z.string().email('Invalid work email address'),
+      password: z.string().min(6, 'Password must be at least 6 characters'),
+      fullName: z.string().min(2, 'Full name is required')
+    });
 
-  // Sync user record into database
-  db.prepare(`
-    INSERT INTO users (id, email, full_name, role)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET full_name=excluded.full_name, role=excluded.role
-  `).run(user.id, user.email, user.name, user.role);
+    const { email, password, fullName } = registerSchema.parse(req.body);
+    const normalizedEmail = email.trim().toLowerCase();
 
-  const token = generateTokenForUser(user);
-
-  res.json({
-    message: `Authenticated as ${user.name} (${user.role})`,
-    token,
-    user: {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role
+    // Check if user already exists
+    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
+    if (existing) {
+      return res.status(400).json({
+        error: 'UserExists',
+        message: 'An account with this email already exists'
+      });
     }
-  });
+
+    const id = `usr_${randomUUID().replace(/-/g, '').slice(0, 10)}`;
+    const passwordHash = bcrypt.hashSync(password, 10);
+    const role = 'USER'; // Strictly USER for self-registration
+
+    db.prepare(`
+      INSERT INTO users (id, email, password_hash, full_name, role)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(id, normalizedEmail, passwordHash, fullName.trim(), role);
+
+    const newUser = { id, email: normalizedEmail, full_name: fullName.trim(), role: 'USER' as const };
+    const token = generateOidcToken(newUser);
+
+    res.status(201).json({
+      message: 'Account created successfully',
+      token,
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        name: newUser.full_name,
+        role: newUser.role
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/v1/auth/users
+ * Admin-only: Create new users and assign role (USER or ADMIN).
+ * SECURITY GUARD: Protected by requireAdmin middleware.
+ * Only verified admins can create new admin accounts!
+ */
+authRouter.post('/users', authenticateJWT, requireAdmin, (req, res, next) => {
+  try {
+    const createUserSchema = z.object({
+      email: z.string().email(),
+      password: z.string().min(6),
+      fullName: z.string().min(2),
+      role: z.enum(['ADMIN', 'USER'])
+    });
+
+    const { email, password, fullName, role } = createUserSchema.parse(req.body);
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
+    if (existing) {
+      return res.status(400).json({
+        error: 'UserExists',
+        message: 'A user with this email already exists'
+      });
+    }
+
+    const id = `usr_${randomUUID().replace(/-/g, '').slice(0, 10)}`;
+    const passwordHash = bcrypt.hashSync(password, 10);
+
+    db.prepare(`
+      INSERT INTO users (id, email, password_hash, full_name, role)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(id, normalizedEmail, passwordHash, fullName.trim(), role);
+
+    res.status(201).json({
+      message: `User created successfully with role ${role}`,
+      user: {
+        id,
+        email: normalizedEmail,
+        name: fullName.trim(),
+        role
+      }
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/v1/auth/users
+ * Admin-only: List all registered employees and their roles
+ */
+authRouter.get('/users', authenticateJWT, requireAdmin, (req, res, next) => {
+  try {
+    const users = db.prepare(`
+      SELECT id, email, full_name as name, role, created_at 
+      FROM users 
+      ORDER BY role ASC, full_name ASC
+    `).all();
+
+    res.json({ count: users.length, data: users });
+  } catch (err) {
+    next(err);
+  }
 });
 
 /**

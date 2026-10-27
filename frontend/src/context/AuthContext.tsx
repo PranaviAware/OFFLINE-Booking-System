@@ -5,8 +5,8 @@ import { api } from '../api/client';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (email: string, password?: string) => Promise<{ success: boolean; message?: string }>;
-  loginQuick: (role: 'admin' | 'user') => Promise<void>;
+  login: (email: string, password: string) => Promise<{ success: boolean; message?: string }>;
+  register: (fullName: string, email: string, password: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
 }
 
@@ -16,7 +16,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Check if token exists in localStorage on startup
+  // Check if existing token is valid on app start
   useEffect(() => {
     const checkToken = async () => {
       const token = localStorage.getItem('officelink_token');
@@ -34,7 +34,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     checkToken();
   }, []);
 
-  const login = async (email: string, password?: string) => {
+  const login = async (email: string, password: string) => {
     setLoading(true);
     try {
       const data = await api.login(email, password);
@@ -42,21 +42,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(data.user);
       return { success: true };
     } catch (err: any) {
-      return { success: false, message: err.response?.data?.message || 'Login failed' };
+      return { success: false, message: err.response?.data?.message || 'Invalid email or password' };
     } finally {
       setLoading(false);
     }
   };
 
-  const loginQuick = async (role: 'admin' | 'user') => {
+  const register = async (fullName: string, email: string, password: string) => {
     setLoading(true);
     try {
-      const persona = role === 'admin' ? 'admin' : 'user1';
-      const data = await api.demoLogin(persona);
+      const data = await api.register(fullName, email, password);
       localStorage.setItem('officelink_token', data.token);
       setUser(data.user);
-    } catch (err) {
-      console.error(err);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, message: err.response?.data?.message || 'Registration failed' };
     } finally {
       setLoading(false);
     }
@@ -68,7 +68,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, loginQuick, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

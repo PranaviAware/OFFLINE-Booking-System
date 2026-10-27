@@ -6,10 +6,11 @@
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
 
--- 1. Users Table (Synchronized with JWT claims)
+-- 1. Users Table (Synchronized with OIDC / JWT claims)
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     email TEXT NOT NULL UNIQUE,
+    password_hash TEXT,
     full_name TEXT NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('ADMIN', 'USER')) DEFAULT 'USER',
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))

@@ -1,20 +1,49 @@
 import { db } from '../config/database';
-import { DEMO_USERS } from '../routes/auth.routes';
+import bcrypt from 'bcryptjs';
 
 export function seedDatabase() {
-  console.log('🌱 Seeding Office Link database...');
+  console.log('🌱 Seeding Office Link database with hashed passwords...');
 
-  // 1. Seed Users
+  // 1. Seed Corporate Users with real hashed passwords
+  const users = [
+    {
+      id: 'usr_kpit_admin',
+      email: 'admin@kpit.com',
+      password: 'Admin@123',
+      fullName: 'KPIT System Admin',
+      role: 'ADMIN'
+    },
+    {
+      id: 'usr_kpit_bob',
+      email: 'bob@kpit.com',
+      password: 'User@123',
+      fullName: 'Bob Employee',
+      role: 'USER'
+    },
+    {
+      id: 'usr_kpit_charlie',
+      email: 'charlie@kpit.com',
+      password: 'User@123',
+      fullName: 'Charlie Employee',
+      role: 'USER'
+    }
+  ];
+
   const insertUser = db.prepare(`
-    INSERT INTO users (id, email, full_name, role)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET full_name = excluded.full_name, role = excluded.role
+    INSERT INTO users (id, email, password_hash, full_name, role)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET 
+      email = excluded.email,
+      password_hash = excluded.password_hash,
+      full_name = excluded.full_name,
+      role = excluded.role
   `);
 
-  Object.values(DEMO_USERS).forEach(u => {
-    insertUser.run(u.id, u.email, u.name, u.role);
+  users.forEach(u => {
+    const hash = bcrypt.hashSync(u.password, 10);
+    insertUser.run(u.id, u.email, hash, u.fullName, u.role);
   });
-  console.log('  ✔ Users seeded (Alice Admin, Bob User, Charlie User)');
+  console.log('  ✔ Users seeded with hashed passwords (admin@kpit.com, bob@kpit.com, charlie@kpit.com)');
 
   // 2. Seed Resources
   const resources = [
@@ -100,8 +129,7 @@ export function seedDatabase() {
   });
   console.log(`  ✔ ${resources.length} Resources seeded (Rooms, Desks, Equipment)`);
 
-  // 3. Seed an existing active booking for demonstration
-  // Tomorrow 09:00 to 11:00 UTC on Room Alpha by Alice Admin
+  // 3. Seed demo booking
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   const dateStr = tomorrow.toISOString().split('T')[0];
@@ -119,7 +147,7 @@ export function seedDatabase() {
   insertBooking.run(
     bookingId,
     'res_room_alpha',
-    'usr_alice_admin',
+    'usr_kpit_admin',
     startTime,
     endTime,
     'Quarterly Strategy Alignment'

@@ -15,19 +15,24 @@ if (!fs.existsSync(dir)) {
 }
 
 // Open Database connection with WAL mode and strict foreign keys
-export const db = new Database(resolvedPath, {
-  // verbose: process.env.NODE_ENV === 'development' ? console.log : undefined
-});
+export const db = new Database(resolvedPath);
 
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
-db.pragma('busy_timeout = 5000'); // Wait up to 5 seconds if locked before erroring
+db.pragma('busy_timeout = 5000');
 
 // Initialize schema
 const schemaPath = path.resolve(__dirname, '../db/schema.sql');
 if (fs.existsSync(schemaPath)) {
   const schemaSql = fs.readFileSync(schemaPath, 'utf-8');
   db.exec(schemaSql);
+}
+
+// Ensure password_hash column exists if table was created previously
+try {
+  db.exec('ALTER TABLE users ADD COLUMN password_hash TEXT');
+} catch {
+  // column already exists
 }
 
 export default db;
