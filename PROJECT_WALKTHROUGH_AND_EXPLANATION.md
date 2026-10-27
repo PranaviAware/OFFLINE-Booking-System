@@ -246,16 +246,24 @@ if (requestingUser.role !== 'ADMIN' && booking.user_id !== requestingUser.id) {
 ```
 A standard user (e.g., Bob) can **never** cancel Charlie's booking, even if they guess the booking ID. Alice (Admin) has global override rights.
 
-### 5. Multi-Mode Login & Authentication System
-The platform provides a comprehensive, production-grade authentication flow:
-1. **Corporate SSO (1-Click)**:
-   - Evaluators and developers can click on Alice Admin, Bob Employee, or Charlie Employee to instantly receive an authentic cryptographically signed JWT.
-2. **Work Email & Password Login**:
-   - Accepts work credentials (`POST /api/v1/auth/login`). Automatically signs and issues standard OIDC claims.
-3. **Custom OIDC / JWT Token Tester**:
-   - Allows pasting external Auth0/Keycloak JWT tokens directly into the UI.
-4. **Live JWT Token & Claims Inspector**:
-   - Clicking **"Inspect JWT"** in the top navigation bar opens a live inspector showing the raw Bearer token, decoded header, decoded payload claims (`sub`, `email`, `role`, `roles`), and verification status from the backend.
+### 5. OIDC Authentication & User Management
+The platform enforces strict OpenID Connect (OIDC) JWT standards compatible with Auth0 and Keycloak:
+
+1. **Hashed Password Authentication (`bcryptjs`)**:
+   - All passwords are encrypted with bcrypt salts. No plain text passwords are ever stored.
+   - Default seeded credentials:
+     - **Admin**: `admin@kpit.com` / `Admin@123`
+     - **Standard User**: `bob@kpit.com` / `User@123`
+     - **Standard User 2**: `charlie@kpit.com` / `User@123`
+2. **OIDC Claims in JWT**:
+   - Standard OIDC claims: `sub`, `email`, `email_verified`, `name`, `preferred_username`, `iss`, `aud`, `exp`.
+   - Auth0 namespaced claims: `https://officelink.app/roles`.
+   - Keycloak claims: `realm_access: { roles: ['Admin'] }`.
+   - Discovery endpoint: `GET /api/v1/auth/.well-known/openid-configuration`.
+3. **Role Assignment & User Creation Rules**:
+   - **Self-Registration (`POST /api/v1/auth/register`)**: Employees can register an account, but the backend **strictly enforces `role: 'USER'`**. Non-admins can never grant themselves Admin access.
+   - **Admin User Management (`POST /api/v1/auth/users`)**: Only authenticated administrators (validated via JWT `ADMIN` role claim) can create new users and grant the `ADMIN` role. Attempting to create an admin without administrative credentials returns `403 Forbidden`.
+   - **Admin Users List (`GET /api/v1/auth/users`)**: Administrators can view all registered employees and their assigned role privileges from the Admin Console.
 
 ---
 
