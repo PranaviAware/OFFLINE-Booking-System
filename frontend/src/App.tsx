@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { Navbar } from './components/Navbar';
+import { LoginPage } from './pages/LoginPage';
 import { CatalogPage } from './pages/CatalogPage';
 import { MyBookingsPage } from './pages/MyBookingsPage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import { Toast } from './components/Toast';
 
-export const AppContent: React.FC = () => {
+export const MainApp: React.FC = () => {
+  const { user, loading } = useAuth();
   const [currentTab, setCurrentTab] = useState<'catalog' | 'my-bookings' | 'admin'>('catalog');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
@@ -14,19 +16,29 @@ export const AppContent: React.FC = () => {
     setToast({ message, type });
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center text-xs text-slate-500">
+        Loading Office Link...
+      </div>
+    );
+  }
+
+  // If user is not authenticated, show simple Login Screen
+  if (!user) {
+    return <LoginPage />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* Top Navigation */}
-      <Navbar currentTab={currentTab} setCurrentTab={setCurrentTab} onNotify={showNotification} />
+      <Navbar currentTab={currentTab} setCurrentTab={setCurrentTab} />
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-6">
         {currentTab === 'catalog' && <CatalogPage onNotify={showNotification} />}
         {currentTab === 'my-bookings' && <MyBookingsPage onNotify={showNotification} />}
         {currentTab === 'admin' && <AdminDashboardPage onNotify={showNotification} />}
       </main>
 
-      {/* Toast Notification */}
       {toast && (
         <Toast
           message={toast.message}
@@ -35,12 +47,8 @@ export const AppContent: React.FC = () => {
         />
       )}
 
-      {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 py-6 text-center text-xs text-slate-500">
-        <p className="font-medium text-slate-700">Office Link Reservation Platform</p>
-        <p className="mt-1 text-[11px] text-slate-400">
-          Engineered with ACID Concurrency Control, PostgreSQL/SQLite immediate locks, UTC data integrity & OIDC/JWT RBAC.
-        </p>
+      <footer className="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-400">
+        Office Link — Resource Reservation System (KPIT Technologies)
       </footer>
     </div>
   );
@@ -49,7 +57,7 @@ export const AppContent: React.FC = () => {
 export const App: React.FC = () => {
   return (
     <AuthProvider>
-      <AppContent />
+      <MainApp />
     </AuthProvider>
   );
 };

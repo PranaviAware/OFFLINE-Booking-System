@@ -7,13 +7,14 @@ export default {
   theme: {
     extend: {
       colors: {
-        brand: {
-          50: '#f0fdfa',
-          100: '#ccfbf1',
-          500: '#14b8a6',
-          600: '#0d9488',
-          700: '#0f766e',
-          900: '#134e4a',
+        kpit: {
+          green: '#00A859',
+          greenHover: '#008f4c',
+          greenLight: '#E8F7F0',
+          purple: '#3B1C54',
+          purpleHover: '#2E1542',
+          purpleLight: '#F3E8FF',
+          dark: '#1C0D2A'
         }
       }
     },
