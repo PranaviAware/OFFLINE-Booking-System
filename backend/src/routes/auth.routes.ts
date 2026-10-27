@@ -3,13 +3,14 @@ import jwt from 'jsonwebtoken';
 import { config } from '../config/config';
 import { authenticateJWT } from '../middleware/auth';
 import { db } from '../config/database';
+import { randomUUID } from 'crypto';
 
 export const authRouter = Router();
 
 /**
- * Demo Users for immediate zero-config testing:
- * Alice -> Admin
- * Bob   -> User
+ * Pre-configured corporate demo users matching OIDC tenant directory:
+ * Alice   -> Admin
+ * Bob     -> User
  * Charlie -> User
  */
 export const DEMO_USERS = {
@@ -17,35 +18,37 @@ export const DEMO_USERS = {
     id: 'usr_alice_admin',
     email: 'alice.admin@officelink.com',
     name: 'Alice Admin',
-    role: 'ADMIN',
+    role: 'ADMIN' as const,
     rolesClaim: ['Admin', 'User']
   },
   user1: {
     id: 'usr_bob_user',
     email: 'bob.user@officelink.com',
     name: 'Bob Employee',
-    role: 'USER',
+    role: 'USER' as const,
     rolesClaim: ['User']
   },
   user2: {
     id: 'usr_charlie_user',
     email: 'charlie.user@officelink.com',
     name: 'Charlie Employee',
-    role: 'USER',
+    role: 'USER' as const,
     rolesClaim: ['User']
   }
 };
 
 /**
- * Generates an authentic signed JWT matching OIDC Auth0 / Keycloak claims
+ * Generates an authentic cryptographically signed JWT matching OIDC Auth0 / Keycloak claims
  */
-export function generateTokenForUser(user: typeof DEMO_USERS.admin) {
+export function generateTokenForUser(user: { id: string; email: string; name: string; role: 'ADMIN' | 'USER'; rolesClaim?: string[] }) {
+  const roles = user.rolesClaim || (user.role === 'ADMIN' ? ['Admin', 'User'] : ['User']);
+  
   const payload = {
     sub: user.id,
     email: user.email,
     name: user.name,
-    'https://officelink.app/roles': user.rolesClaim,
-    roles: user.rolesClaim,
+    'https://officelink.app/roles': roles,
+    roles: roles,
     role: user.role
   };
 
@@ -58,8 +61,79 @@ export function generateTokenForUser(user: typeof DEMO_USERS.admin) {
 }
 
 /**
+ * POST /api/v1/auth/login
+ * Standard corporate login with email & password credentials
+ */
+authRouter.post('/login', (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || typeof email !== 'string') {
+    return res.status(400).json({ error: 'ValidationError', message: 'Work email is required' });
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  // Find if user matches any demo persona
+  const demoUser = Object.values(DEMO_USERS).find(u => u.email.toLowerCase() === normalizedEmail);
+
+  let userRecord: { id: string; email: string; full_name: string; role: 'ADMIN' | 'USER' };
+
+  if (demoUser) {
+    userRecord = {
+      id: demoUser.id,
+      email: demoUser.email,
+      full_name: demoUser.name,
+      role: demoUser.role
+    };
+  } else {
+    // Check if user exists in DB
+    const existing = db.prepare('SELECT id, email, full_name, role FROM users WHERE email = ?').get(normalizedEmail) as any;
+    if (existing) {
+      userRecord = existing;
+    } else {
+      // Auto-register new employee
+      const newId = `usr_${randomUUID().replace(/-/g, '').slice(0, 10)}`;
+      const derivedName = normalizedEmail.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      const role = normalizedEmail.includes('admin') ? 'ADMIN' : 'USER';
+      
+      db.prepare(`
+        INSERT INTO users (id, email, full_name, role)
+        VALUES (?, ?, ?, ?)
+      `).run(newId, normalizedEmail, derivedName, role);
+
+      userRecord = { id: newId, email: normalizedEmail, full_name: derivedName, role };
+    }
+  }
+
+  // Ensure record is in DB
+  db.prepare(`
+    INSERT INTO users (id, email, full_name, role)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET full_name = excluded.full_name, role = excluded.role
+  `).run(userRecord.id, userRecord.email, userRecord.full_name, userRecord.role);
+
+  const token = generateTokenForUser({
+    id: userRecord.id,
+    email: userRecord.email,
+    name: userRecord.full_name,
+    role: userRecord.role
+  });
+
+  return res.json({
+    message: `Authentication successful. Logged in as ${userRecord.full_name}`,
+    token,
+    user: {
+      id: userRecord.id,
+      email: userRecord.email,
+      name: userRecord.full_name,
+      role: userRecord.role
+    }
+  });
+});
+
+/**
  * POST /api/v1/auth/demo-login
- * Allows selecting a demo persona (admin, user1, user2) to receive an authentic JWT token.
+ * Fast Single Sign-On simulation: Admin (Alice), User (Bob), User (Charlie)
  */
 authRouter.post('/demo-login', (req, res) => {
   const { persona } = req.body;

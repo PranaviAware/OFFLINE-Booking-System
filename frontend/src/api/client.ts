@@ -21,6 +21,10 @@ apiClient.interceptors.request.use((config) => {
 
 export const api = {
   // Auth
+  login: async (email: string, password?: string) => {
+    const res = await apiClient.post('/auth/login', { email, password });
+    return res.data;
+  },
   demoLogin: async (persona: 'admin' | 'user1' | 'user2') => {
     const res = await apiClient.post('/auth/demo-login', { persona });
     return res.data;
