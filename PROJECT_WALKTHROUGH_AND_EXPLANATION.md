@@ -246,6 +246,17 @@ if (requestingUser.role !== 'ADMIN' && booking.user_id !== requestingUser.id) {
 ```
 A standard user (e.g., Bob) can **never** cancel Charlie's booking, even if they guess the booking ID. Alice (Admin) has global override rights.
 
+### 5. Multi-Mode Login & Authentication System
+The platform provides a comprehensive, production-grade authentication flow:
+1. **Corporate SSO (1-Click)**:
+   - Evaluators and developers can click on Alice Admin, Bob Employee, or Charlie Employee to instantly receive an authentic cryptographically signed JWT.
+2. **Work Email & Password Login**:
+   - Accepts work credentials (`POST /api/v1/auth/login`). Automatically signs and issues standard OIDC claims.
+3. **Custom OIDC / JWT Token Tester**:
+   - Allows pasting external Auth0/Keycloak JWT tokens directly into the UI.
+4. **Live JWT Token & Claims Inspector**:
+   - Clicking **"Inspect JWT"** in the top navigation bar opens a live inspector showing the raw Bearer token, decoded header, decoded payload claims (`sub`, `email`, `role`, `roles`), and verification status from the backend.
+
 ---
 
 ## 6. Deep Dive: Data Integrity & UTC Handling
