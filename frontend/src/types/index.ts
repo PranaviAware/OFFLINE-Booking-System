@@ -7,6 +7,7 @@ export interface User {
   email: string;
   name: string;
   role: UserRole;
+  created_at?: string;
 }
 
 export interface Resource {
@@ -17,6 +18,7 @@ export interface Resource {
   location: string;
   description?: string;
   is_active: number;
+  is_currently_available?: boolean;
   created_at: string;
   updated_at: string;
 }

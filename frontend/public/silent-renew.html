@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Silent Token Renewal</title>
+</head>
+<body>
+<!--
+  Silent renew page for oidc-client-ts.
+
+  When automaticSilentRenew fires, the library loads this page in a hidden
+  iframe, calls signinSilentCallback(), and receives a fresh access token
+  without any visible page navigation.
+
+  We load oidc-client-ts from a CDN (not /node_modules which isn't served
+  by Vite/nginx in production).
+-->
+<script src="https://cdn.jsdelivr.net/npm/oidc-client-ts@3/dist/browser/oidc-client-ts.min.js"></script>
+<script>
+  new oidc.UserManager({ userStore: new oidc.WebStorageStateStore({ store: window.sessionStorage }) })
+    .signinSilentCallback()
+    .catch(function(err) {
+      console.warn('[silent-renew] signinSilentCallback error:', err);
+    });
+</script>
+</body>
+</html>

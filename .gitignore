@@ -7,7 +7,9 @@ yarn-error.log*
 # Build outputs
 dist/
 build/
+target/
 .tsbuildinfo
+*.log
 
 # Environment and secrets (Never commit secrets!)
 .env
